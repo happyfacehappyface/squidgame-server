@@ -59,9 +59,10 @@ export class Room {
     public removeClient(clientId: string): boolean {
         const client = this.clients.get(clientId);
         if (client) {
+            const playerName = client.playerName; // leaveRoom() 호출 전에 playerName 저장
             client.leaveRoom();
             this.clients.delete(clientId);
-            console.log(`방 ${this.id}: 플레이어 ${client.playerName} (${clientId}) 퇴장`);
+            console.log(`방 ${this.id}: 플레이어 ${playerName} (${clientId}) 퇴장`);
             return true;
         }
         return false;

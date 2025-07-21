@@ -1,4 +1,4 @@
-import { BaseMiniGame, MiniGameResult } from './IMiniGame';
+import { BaseMiniGame, MiniGameResult, EndConditionResult } from './IMiniGame';
 import { MiniGameType } from '../GameState';
 
 // 줄다리기 팀
@@ -146,5 +146,12 @@ export class TugOfWarGame extends BaseMiniGame {
             return TugOfWarTeam.TEAM_B;
         }
         return null;
+    }
+    
+    // 줄다리기는 연결 해제로 게임이 즉시 종료되지 않음
+    public checkEndCondition(alivePlayers: string[]): EndConditionResult {
+        // 줄다리기 게임은 시간 기반으로만 종료됨
+        // 연결 해제로는 게임을 종료시키지 않음
+        return { isFinished: false };
     }
 } 

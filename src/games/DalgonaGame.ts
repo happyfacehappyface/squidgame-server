@@ -1,4 +1,4 @@
-import { BaseMiniGame, MiniGameResult } from './IMiniGame';
+import { BaseMiniGame, MiniGameResult, EndConditionResult } from './IMiniGame';
 import { MiniGameType } from '../GameState';
 
 // 달고나 모양 타입
@@ -104,5 +104,27 @@ export class DalgonaGame extends BaseMiniGame {
             startTime: this.startTime,
             submissions: this.playerResults.size
         };
+    }
+    
+    // 달고나 게임 종료 조건 (연결 해제 시 고려)
+    public checkEndCondition(alivePlayers: string[]): EndConditionResult {
+        // 생존자가 1명 이하면 즉시 종료
+        if (alivePlayers.length <= 1) {
+            return {
+                isFinished: true,
+                reason: alivePlayers.length === 0 ? 'No players remaining' : 'Only one player remaining'
+            };
+        }
+        
+        // 모든 생존 플레이어가 결과를 제출했으면 종료
+        const aliveSubmissions = alivePlayers.filter(playerId => this.playerResults.has(playerId));
+        if (aliveSubmissions.length === alivePlayers.length) {
+            return {
+                isFinished: true,
+                reason: 'All alive players submitted results'
+            };
+        }
+        
+        return { isFinished: false };
     }
 } 

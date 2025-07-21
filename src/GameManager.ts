@@ -1,5 +1,5 @@
 import { GameState, GamePhase, MiniGameType, PlayerStatus } from './GameState';
-import { IMiniGame, MiniGameResult } from './games/IMiniGame';
+import { IMiniGame, MiniGameResult, EndConditionResult } from './games/IMiniGame';
 import { DalgonaGame } from './games/DalgonaGame';
 import { TugOfWarGame } from './games/TugOfWarGame';
 
@@ -20,6 +20,7 @@ export class GameManager {
     private gameTimer: NodeJS.Timeout | null = null;
     private restDuration: number = 3000; // 3초 휴식
     private readyPlayers: Set<string> = new Set(); // 서브게임 준비 완료한 플레이어들
+    private playedGames: Set<MiniGameType> = new Set(); // 이미 플레이한 게임들
     private onGameStateChange?: (state: GameState, phase: GamePhase) => void;
     private onPlayerEliminated?: (players: string[]) => void;
     private onGameEnd?: (winner: string | null) => void;
@@ -144,13 +145,36 @@ export class GameManager {
         }, 120000); // 2분
     }
     
-    // 랜덤 미니게임 선택
+    // 랜덤 미니게임 선택 (중복 방지)
     private selectRandomMiniGame(): MiniGameType {
-        const gameTypes = [MiniGameType.DALGONA, MiniGameType.TUG_OF_WAR];
-        const randomIndex = Math.floor(Math.random() * gameTypes.length);
-        const selectedGame = gameTypes[randomIndex];
+        // 모든 사용 가능한 게임 타입들을 동적으로 가져오기
+        const allGameTypes = Object.values(MiniGameType) as MiniGameType[];
         
-        console.log(`랜덤 미니게임 선택: ${selectedGame === MiniGameType.DALGONA ? '달고나' : '줄다리기'} 게임`);
+        // 아직 플레이하지 않은 게임들만 필터링
+        const availableGames = allGameTypes.filter(gameType => !this.playedGames.has(gameType));
+        
+        // 모든 게임을 플레이했다면 플레이한 게임 기록 초기화하고 다시 시작
+        if (availableGames.length === 0) {
+            console.log('모든 미니게임을 플레이했습니다. 플레이한 게임 기록을 초기화합니다.');
+            this.playedGames.clear();
+            return this.selectRandomMiniGame(); // 재귀 호출로 다시 선택
+        }
+        
+        // 사용 가능한 게임 중에서 랜덤 선택
+        const randomIndex = Math.floor(Math.random() * availableGames.length);
+        const selectedGame = availableGames[randomIndex];
+        
+        // 선택된 게임을 플레이한 게임 목록에 추가
+        this.playedGames.add(selectedGame);
+        
+        // 게임 이름 매핑
+        const gameNameMap: Record<MiniGameType, string> = {
+            [MiniGameType.DALGONA]: '달고나',
+            [MiniGameType.TUG_OF_WAR]: '줄다리기'
+        };
+        
+        const playedGameNames = Array.from(this.playedGames).map(g => gameNameMap[g]).join(', ');
+        console.log(`랜덤 미니게임 선택: ${gameNameMap[selectedGame]} 게임 (총 ${allGameTypes.length}개 중 플레이 완료: ${playedGameNames})`);
         
         return selectedGame;
     }
@@ -342,6 +366,165 @@ export class GameManager {
         return this.readyPlayers.size;
     }
 
+    // 플레이어 탈락 처리 (연결 해제 시)
+    public eliminatePlayerByDisconnection(playerId: string): boolean {
+        const player = this.players.get(playerId);
+        if (!player) {
+            console.log(`플레이어 ${playerId}를 찾을 수 없습니다.`);
+            return false;
+        }
+        
+        if (player.status !== PlayerStatus.ALIVE) {
+            console.log(`플레이어 ${playerId}는 이미 탈락했습니다.`);
+            return false;
+        }
+        
+        // 플레이어를 탈락 상태로 변경
+        player.status = PlayerStatus.ELIMINATED;
+        player.eliminatedInRound = this.currentRound;
+        
+        // readyPlayers에서도 제거
+        this.readyPlayers.delete(playerId);
+        
+        console.log(`플레이어 ${playerId} (${player.name})가 연결 해제로 인해 탈락했습니다.`);
+        
+        // 게임 종료 조건 확인
+        this.checkGameEndConditions();
+        
+        // 서브게임 진행 중이라면 서브게임 종료 조건 확인
+        if (this.gamePhase === GamePhase.MINIGAME && this.currentMiniGame) {
+            this.checkSubGameEndConditions();
+        }
+        
+        return true;
+    }
+    
+    // 게임 종료 조건 확인
+    private checkGameEndConditions(): void {
+        const alivePlayers = Array.from(this.players.values()).filter(p => p.status === PlayerStatus.ALIVE);
+        
+        if (alivePlayers.length <= 1) {
+            console.log(`생존자가 ${alivePlayers.length}명입니다. 게임 종료!`);
+            
+            // 우승자 결정
+            const winner = alivePlayers.length === 1 ? alivePlayers[0].id : null;
+            
+            // 게임 종료 처리
+            this.gameState = GameState.FINISHED;
+            this.gamePhase = GamePhase.REST;
+            
+            // 타이머 정리
+            if (this.restTimer) {
+                clearTimeout(this.restTimer);
+                this.restTimer = null;
+            }
+            if (this.gameTimer) {
+                clearTimeout(this.gameTimer);
+                this.gameTimer = null;
+            }
+            
+            // 이벤트 핸들러 호출
+            if (this.onGameEnd) {
+                this.onGameEnd(winner);
+            }
+        }
+    }
+    
+    // 서브게임 종료 조건 확인
+    private checkSubGameEndConditions(): void {
+        if (!this.currentMiniGame) {
+            return;
+        }
+        
+        const alivePlayers = Array.from(this.players.values()).filter(p => p.status === PlayerStatus.ALIVE);
+        const alivePlayerIds = alivePlayers.map(p => p.id);
+        
+        // 미니게임 종료 조건 확인
+        const gameResult = this.currentMiniGame.checkEndCondition(alivePlayerIds);
+        
+        if (gameResult.isFinished) {
+            console.log('연결 해제로 인한 서브게임 조기 종료 조건 충족!');
+            
+            // 서브게임 강제 종료
+            this.forceEndCurrentMiniGame();
+        }
+    }
+    
+    // 현재 미니게임 강제 종료 (연결 해제 등으로 인한)
+    private forceEndCurrentMiniGame(): void {
+        if (!this.currentMiniGame) {
+            return;
+        }
+        
+        console.log('미니게임 강제 종료 처리 중...');
+        
+        // 현재 생존한 플레이어들
+        const alivePlayers = Array.from(this.players.values()).filter(p => p.status === PlayerStatus.ALIVE);
+        const alivePlayerIds = alivePlayers.map(p => p.id);
+        
+        // 미니게임 결과 계산
+        const gameResult = this.currentMiniGame.getResult(alivePlayerIds);
+        
+        // 탈락자 처리
+        const eliminatedInThisRound: string[] = [];
+        for (const playerId of gameResult.eliminatedPlayers) {
+            const player = this.players.get(playerId);
+            if (player && player.status === PlayerStatus.ALIVE) {
+                player.status = PlayerStatus.ELIMINATED;
+                player.eliminatedInRound = this.currentRound;
+                eliminatedInThisRound.push(playerId);
+            }
+        }
+        
+        if (eliminatedInThisRound.length > 0 && this.onPlayerEliminated) {
+            this.onPlayerEliminated(eliminatedInThisRound);
+        }
+        
+        // 서브게임 종료 이벤트 호출
+        const survivors = gameResult.survivors;
+        if (this.onSubGameEnded) {
+            this.onSubGameEnded(survivors, eliminatedInThisRound);
+        }
+        
+        // 미니게임 정리
+        this.currentMiniGame = null;
+        this.readyPlayers.clear();
+        
+        // 게임 종료 조건 재확인
+        this.checkGameEndConditions();
+        
+        // 게임이 아직 끝나지 않았다면 다음 라운드 준비
+        if (this.gameState === GameState.IN_PROGRESS) {
+            this.gamePhase = GamePhase.RESULT;
+            
+            // 5초 후 다음 라운드 시작
+            this.restTimer = setTimeout(() => {
+                this.startNextRound();
+            }, 5000);
+        }
+    }
+    
+    // 다음 라운드 시작
+    private startNextRound(): void {
+        if (this.gameState !== GameState.IN_PROGRESS) {
+            return;
+        }
+        
+        // 생존자 확인
+        const alivePlayers = this.getAlivePlayers();
+        if (alivePlayers.length <= 1) {
+            console.log('다음 라운드 시작 불가: 생존자가 1명 이하입니다.');
+            this.checkGameEndConditions();
+            return;
+        }
+        
+        console.log(`다음 라운드 시작 - 생존자 ${alivePlayers.length}명`);
+        
+        // 다음 라운드로 진행
+        this.currentRound++;
+        this.startRestPhase();
+    }
+    
     // 게임 리셋
     public resetGame(): void {
         if (this.restTimer) {
@@ -360,6 +543,7 @@ export class GameManager {
         this.players.clear();
         this.currentMiniGame = null;
         this.readyPlayers.clear();
+        this.playedGames.clear(); // 플레이한 게임 기록도 초기화
         
         console.log('게임 리셋 완료');
     }

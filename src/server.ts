@@ -27,6 +27,7 @@ const gameManager = new GameManager();
 
 // 달고나 게임 결과 추적 (clientId -> isSuccess)
 const dalgonaGameResults = new Map<string, boolean>();
+let dalgonaGameTimer: NodeJS.Timeout | null = null;
 
 // 줄다리기 게임 상태 추적
 let tugOfWarLeftTeam: number[] = [];
@@ -68,8 +69,14 @@ gameManager.setEventHandlers({
             // 달고나 게임은 별도 인터벌이 필요없음 (클라이언트 독립 실행)
         }
         
-        // 미니게임이 끝나면 줄다리기 인터벌과 타이머 정리
+        // 미니게임이 끝나면 모든 게임 타이머와 인터벌 정리
         if (phase !== GamePhase.MINIGAME) {
+            // 달고나 게임 타이머 정리
+            if (dalgonaGameTimer) {
+                clearTimeout(dalgonaGameTimer);
+                dalgonaGameTimer = null;
+            }
+            // 줄다리기 게임 인터벌과 타이머 정리
             if (tugOfWarGameInterval) {
                 clearInterval(tugOfWarGameInterval);
                 tugOfWarGameInterval = null;
@@ -78,7 +85,7 @@ gameManager.setEventHandlers({
                 clearTimeout(tugOfWarGameTimer);
                 tugOfWarGameTimer = null;
             }
-            console.log('줄다리기 게임 인터벌과 타이머 정리 완료');
+            console.log('모든 미니게임 타이머와 인터벌 정리 완료');
         }
     },
     onPlayerEliminated: (eliminatedPlayers: string[]) => {
@@ -88,7 +95,11 @@ gameManager.setEventHandlers({
     onGameEnd: (winnerId: string | null) => {
         console.log(`게임 종료: 우승자 ${winnerId || '없음'}`);
         
-        // 줄다리기 게임 인터벌과 타이머 정리
+        // 모든 게임 타이머와 인터벌 정리
+        if (dalgonaGameTimer) {
+            clearTimeout(dalgonaGameTimer);
+            dalgonaGameTimer = null;
+        }
         if (tugOfWarGameInterval) {
             clearInterval(tugOfWarGameInterval);
             tugOfWarGameInterval = null;
@@ -97,7 +108,7 @@ gameManager.setEventHandlers({
             clearTimeout(tugOfWarGameTimer);
             tugOfWarGameTimer = null;
         }
-        console.log('게임 종료 - 줄다리기 게임 인터벌과 타이머 정리 완료');
+        console.log('게임 종료 - 모든 미니게임 타이머와 인터벌 정리 완료');
         
         // 우승자의 플레이어 인덱스 구하기
         let winnerPlayerIndex = -1;
@@ -210,6 +221,15 @@ interface ResponsePacket {
     data: any;
 }
 
+// Request 패킷 데이터 형식 (참고용)
+// RequestEnterRoom: { playerName: string }
+// RequestLeaveRoom: {}
+// RequestStartGame: {}
+// RequestReadyGame: {}
+// RequestReadySubGame: {}
+// RequestDalgonaGameResult: { isSuccess: boolean }
+// RequestTugOfWarGamePressCount: { pressCount: number }
+
 // Response 패킷 생성 함수
 function createResponse(code: number, signal: number, data: any = {}): ResponsePacket {
     return {
@@ -246,7 +266,28 @@ function handlePing(client: Client, data: any): void {
 }
 
 function handleEnterRoom(client: Client, data: any): void {
-    console.log('ENTER_ROOM 요청 수신:', client.id);
+    console.log('ENTER_ROOM 요청 수신:', client.id, 'data:', data);
+    
+    // 요청 데이터 검증
+    if (!data || typeof data.playerName !== 'string' || data.playerName.trim() === '') {
+        console.log(`클라이언트 ${client.id} 입장 실패: 플레이어 이름이 없거나 올바르지 않음`);
+        sendResponse(client, createErrorResponse(ResponseSignal.ENTER_ROOM, {
+            message: '올바른 플레이어 이름을 입력해주세요.',
+            errorCode: 'INVALID_PLAYER_NAME'
+        }));
+        return;
+    }
+    
+    // 플레이어 이름 길이 제한 (예: 최대 20자)
+    const playerName = data.playerName.trim();
+    if (playerName.length > 20) {
+        console.log(`클라이언트 ${client.id} 입장 실패: 플레이어 이름이 너무 김 (${playerName.length}자)`);
+        sendResponse(client, createErrorResponse(ResponseSignal.ENTER_ROOM, {
+            message: '플레이어 이름은 20자 이하로 입력해주세요.',
+            errorCode: 'PLAYER_NAME_TOO_LONG'
+        }));
+        return;
+    }
     
     // 방 입장 가능 조건 확인
     // 1. 해당 플레이어가 이미 방에 입장한 상태가 아님
@@ -279,12 +320,11 @@ function handleEnterRoom(client: Client, data: any): void {
         return;
     }
     
-    // 방 입장 처리
-    const playerName = `Player_${client.id.substring(0, 6)}`;
+    // 방 입장 처리 (클라이언트가 전송한 playerName 사용)
     const success = roomManager.addClient(client, playerName);
     
     if (success) {
-        console.log(`클라이언트 ${client.id} 방 입장 성공`);
+        console.log(`클라이언트 ${client.id} (${playerName}) 방 입장 성공`);
         
         // 성공 응답 (data는 빈 객체)
         sendResponse(client, createSuccessResponse(ResponseSignal.ENTER_ROOM, {}));
@@ -299,7 +339,7 @@ function handleEnterRoom(client: Client, data: any): void {
         });
         
     } else {
-        console.log(`클라이언트 ${client.id} 방 입장 실패`);
+        console.log(`클라이언트 ${client.id} (${playerName}) 방 입장 실패`);
         sendResponse(client, createErrorResponse(ResponseSignal.ENTER_ROOM, {
             message: '방 입장에 실패했습니다.',
             errorCode: 'ENTER_FAILED'
@@ -500,6 +540,12 @@ function startDalgonaGame(): void {
     // 달고나 게임 결과 추적 초기화
     dalgonaGameResults.clear();
     
+    // 기존 타이머가 있다면 정리
+    if (dalgonaGameTimer) {
+        clearTimeout(dalgonaGameTimer);
+        dalgonaGameTimer = null;
+    }
+    
     // 달고나 게임의 제한시간 (60초 = 60000ms)
     const timeLimitMs = 60000;
     
@@ -512,7 +558,53 @@ function startDalgonaGame(): void {
         }
     });
     
+    // 60초 후 자동으로 게임 종료
+    dalgonaGameTimer = setTimeout(() => {
+        finishDalgonaGame();
+    }, timeLimitMs);
+    
     console.log(`달고나 게임 시작 패킷 전송 완료 (제한시간: ${timeLimitMs}ms)`);
+}
+
+// 달고나 게임 종료 및 결과 처리
+function finishDalgonaGame(): void {
+    console.log('달고나 게임 제한시간 종료! 결과 처리 중...');
+    
+    // 타이머 정리
+    if (dalgonaGameTimer) {
+        clearTimeout(dalgonaGameTimer);
+        dalgonaGameTimer = null;
+    }
+    
+    // 아직 결과를 제출하지 않은 플레이어들은 자동으로 실패 처리
+    const allPlayerIds = roomManager.getAllClientIds();
+    for (const playerId of allPlayerIds) {
+        if (!dalgonaGameResults.has(playerId)) {
+            console.log(`플레이어 ${playerId}는 시간 내에 결과를 제출하지 않아 자동 실패 처리됩니다.`);
+            dalgonaGameResults.set(playerId, false);
+            
+            // 해당 플레이어의 인덱스 가져오기
+            const playerIndex = roomManager.getPlayerIndex(playerId);
+            if (playerIndex !== -1) {
+                // 모든 플레이어에게 해당 플레이어의 실패 결과 브로드캐스트
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.DALGONA_GAME_RESULT,
+                    data: {
+                        playerIndex: playerIndex,
+                        isSuccess: false
+                    }
+                });
+            }
+        }
+    }
+    
+    console.log(`달고나 게임 시간 종료 처리 완료: 총 ${dalgonaGameResults.size}명의 결과 처리됨`);
+    
+    // GameManager에게 미니게임 종료 알림 (탈락 처리를 위해)
+    setTimeout(() => {
+        gameManager.endCurrentMiniGame();
+    }, 2000); // 2초 후 게임 종료 (플레이어들이 결과를 확인할 시간 제공)
 }
 
 // 줄다리기 게임 시작
@@ -764,7 +856,11 @@ function resetGameRoom(): void {
     tugOfWarLeftTeamScore = 0;
     tugOfWarRightTeamScore = 0;
     
-    // 인터벌과 타이머 정리
+    // 모든 게임 타이머와 인터벌 정리
+    if (dalgonaGameTimer) {
+        clearTimeout(dalgonaGameTimer);
+        dalgonaGameTimer = null;
+    }
     if (tugOfWarGameInterval) {
         clearInterval(tugOfWarGameInterval);
         tugOfWarGameInterval = null;
@@ -798,6 +894,13 @@ function checkDalgonaGameComplete(): void {
     
     if (submittedResults === totalPlayers && totalPlayers > 0) {
         console.log('모든 플레이어가 달고나 게임 결과를 전송했습니다.');
+        
+        // 달고나 게임 타이머 정리 (모든 플레이어가 일찍 완료함)
+        if (dalgonaGameTimer) {
+            clearTimeout(dalgonaGameTimer);
+            dalgonaGameTimer = null;
+            console.log('모든 플레이어 완료로 인한 달고나 게임 타이머 정리');
+        }
         
         // 결과 추적 맵 초기화 (다음 게임을 위해)
         dalgonaGameResults.clear();
@@ -1020,16 +1123,24 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
         
         // 방에 있던 클라이언트라면 자동으로 방에서 제거
         if (roomManager.hasClient(client.id)) {
+            // 게임이 진행 중이고 해당 플레이어가 생존해 있다면 탈락 처리
+            const gameInfo = gameManager.getGameInfo();
+            if (gameInfo.gameState === GameState.IN_PROGRESS) {
+                gameManager.eliminatePlayerByDisconnection(client.id);
+            }
+            
             roomManager.removeClient(client.id);
             
-            // 다른 플레이어들에게 플레이어 수 변경 알림
-            roomManager.broadcast({
-                code: ResponseCode.SUCCESS,
-                signal: ResponseSignal.PLAYER_COUNT_CHANGED,
-                data: {
-                    playerCount: roomManager.getPlayerCount()
-                }
-            });
+            // 다른 플레이어들에게 플레이어 수 변경 알림 (대기 상태일 때만)
+            if (gameInfo.gameState === GameState.WAITING) {
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.PLAYER_COUNT_CHANGED,
+                    data: {
+                        playerCount: roomManager.getPlayerCount()
+                    }
+                });
+            }
         }
         
         client.disconnect();
@@ -1042,16 +1153,24 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
         
         // 방에 있던 클라이언트라면 자동으로 방에서 제거
         if (roomManager.hasClient(client.id)) {
+            // 게임이 진행 중이고 해당 플레이어가 생존해 있다면 탈락 처리
+            const gameInfo = gameManager.getGameInfo();
+            if (gameInfo.gameState === GameState.IN_PROGRESS) {
+                gameManager.eliminatePlayerByDisconnection(client.id);
+            }
+            
             roomManager.removeClient(client.id);
             
-            // 다른 플레이어들에게 플레이어 수 변경 알림
-            roomManager.broadcast({
-                code: ResponseCode.SUCCESS,
-                signal: ResponseSignal.PLAYER_COUNT_CHANGED,
-                data: {
-                    playerCount: roomManager.getPlayerCount()
-                }
-            });
+            // 다른 플레이어들에게 플레이어 수 변경 알림 (대기 상태일 때만)
+            if (gameInfo.gameState === GameState.WAITING) {
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.PLAYER_COUNT_CHANGED,
+                    data: {
+                        playerCount: roomManager.getPlayerCount()
+                    }
+                });
+            }
         }
         
         client.disconnect();
