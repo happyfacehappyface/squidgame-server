@@ -14,7 +14,7 @@ const wss = new WebSocket.Server({
     path: '/ws'
 });
 
-app.set('port', process.env.PORT || 8082);
+app.set('port', 8082);
 
 // 클라이언트 관리
 const clients = new Map<string, Client>(); // clientId -> Client 객체
