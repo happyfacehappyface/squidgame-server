@@ -6,6 +6,7 @@ import { RoomManager } from './RoomManager';
 import { RoomStatus } from './Room';
 import { GameManager } from './GameManager';
 import { GameState, GamePhase, PlayerStatus } from './GameState';
+import { RedLightGreenLightGame } from './games/RedLightGreenLightGame';
 
 const app = express();
 const server = http.createServer(app);
@@ -37,6 +38,11 @@ let tugOfWarRightTeamScore = 0;
 let tugOfWarGameInterval: NodeJS.Timeout | null = null;
 let tugOfWarGameTimer: NodeJS.Timeout | null = null;
 
+// Red Light Green Light 게임 상태 추적 (호환성을 위해 유지, 추후 제거 예정)
+let redLightGreenLightTimer: NodeJS.Timeout | null = null;
+let redLightGreenLightGameTimer: NodeJS.Timeout | null = null;
+let redLightOn = true; // 처음은 빨간불로 시작
+
 // GameManager 이벤트 핸들러 설정
 gameManager.setEventHandlers({
     onGameStateChange: (state: GameState, phase: GamePhase) => {
@@ -53,6 +59,8 @@ gameManager.setEventHandlers({
                 startTugOfWarGame();
             } else if (currentGameType === 'DALGONA') {
                 startDalgonaGame();
+            } else if (currentGameType === 'RED_LIGHT_GREEN_LIGHT') {
+                startRedLightGreenLightGameFromClass();
             } else {
                 console.log(`알 수 없는 게임 타입: ${currentGameType} - 게임 시작 패킷을 전송하지 않습니다.`);
             }
@@ -65,6 +73,8 @@ gameManager.setEventHandlers({
             
             if (currentGameType === 'TUG_OF_WAR') {
                 startTugOfWarGameInterval();
+            } else if (currentGameType === 'RED_LIGHT_GREEN_LIGHT') {
+                startRedLightGreenLightIntervalFromClass();
             }
             // 달고나 게임은 별도 인터벌이 필요없음 (클라이언트 독립 실행)
         }
@@ -84,6 +94,15 @@ gameManager.setEventHandlers({
             if (tugOfWarGameTimer) {
                 clearTimeout(tugOfWarGameTimer);
                 tugOfWarGameTimer = null;
+            }
+            // Red Light Green Light 게임 타이머 정리
+            if (redLightGreenLightTimer) {
+                clearTimeout(redLightGreenLightTimer);
+                redLightGreenLightTimer = null;
+            }
+            if (redLightGreenLightGameTimer) {
+                clearTimeout(redLightGreenLightGameTimer);
+                redLightGreenLightGameTimer = null;
             }
             console.log('모든 미니게임 타이머와 인터벌 정리 완료');
         }
@@ -107,6 +126,14 @@ gameManager.setEventHandlers({
         if (tugOfWarGameTimer) {
             clearTimeout(tugOfWarGameTimer);
             tugOfWarGameTimer = null;
+        }
+        if (redLightGreenLightTimer) {
+            clearTimeout(redLightGreenLightTimer);
+            redLightGreenLightTimer = null;
+        }
+        if (redLightGreenLightGameTimer) {
+            clearTimeout(redLightGreenLightGameTimer);
+            redLightGreenLightGameTimer = null;
         }
         console.log('게임 종료 - 모든 미니게임 타이머와 인터벌 정리 완료');
         
@@ -180,6 +207,9 @@ const RequestSignal = {
 
     TUGOFWAR_GAME_PRESS_COUNT: 2202,
 
+    REDLIGHTGREENLIGHT_PLAYER_RESULT: 2303,
+    REDLIGHTGREENLIGHT_PLAYER_POSITION: 2304,
+
 } as const;
 
 // Signal 번호 정의 (Response)
@@ -201,6 +231,15 @@ const ResponseSignal = {
     TUGOFWAR_GAME_STARTED: 2201,
     TUGOFWAR_GAME_PRESS_COUNT: 2202,
     TUGOFWAR_GAME_RESULT: 2203,
+
+    REDLIGHTGREENLIGHT_GAME_STARTED: 2301,
+
+    REDLIGHTGREENLIGHT_LIGHT_CHANGED: 2302,
+
+    REDLIGHTGREENLIGHT_PLAYER_RESULT: 2303,
+
+    REDLIGHTGREENLIGHT_PLAYER_POSITION: 2304,
+    REDLIGHTGREENLIGHT_GAME_RESULT: 2305,
 
 } as const;
 
@@ -738,12 +777,337 @@ function finishTugOfWarGame(): void {
     
     console.log(`줄다리기 게임 결과 브로드캐스트 완료`);
     console.log(`최종 점수 차이: ${deltaPressCount} (왼쪽: ${tugOfWarLeftTeamScore}, 오른쪽: ${tugOfWarRightTeamScore})`);
-    console.log(`승리 팀: ${isLeftWin ? '왼쪽 팀' : '오른쪽 팀'}`);
+    if (deltaPressCount === 0) {
+        console.log(`승리 팀: 오른쪽 팀 (무승부 시 오른쪽 팀 승리 규칙)`);
+    } else {
+        console.log(`승리 팀: ${isLeftWin ? '왼쪽 팀' : '오른쪽 팀'}`);
+    }
     
     // GameManager에게 미니게임 종료 알림 (탈락 처리를 위해)
     setTimeout(() => {
         gameManager.endCurrentMiniGame();
     }, 2000); // 2초 후 게임 종료 (플레이어들이 결과를 확인할 시간 제공)
+}
+
+// 기존 Red Light Green Light 함수들은 RedLightGreenLightGame 클래스로 이동됨
+
+// Red Light Green Light 게임 시작 (클래스 사용)
+function startRedLightGreenLightGameFromClass(): void {
+    console.log('Red Light Green Light 게임 시작! (클래스 버전)');
+    
+    // 현재 미니게임 인스턴스 가져오기
+    const currentMiniGame = gameManager.getCurrentMiniGameState();
+    if (!currentMiniGame || currentMiniGame.gameType !== 'RED_LIGHT_GREEN_LIGHT') {
+        console.error('Red Light Green Light 게임 인스턴스를 찾을 수 없습니다!');
+        return;
+    }
+    
+    // 플레이어 ID -> 인덱스 매핑 생성
+    const playerIndexMap = new Map<string, number>();
+    const allClientIds = roomManager.getAllClientIds();
+    console.log(`[DEBUG] playerIndexMap 설정 시작: 총 ${allClientIds.length}명의 클라이언트`);
+    
+    allClientIds.forEach(clientId => {
+        const playerIndex = roomManager.getPlayerIndex(clientId);
+        if (playerIndex !== -1) {
+            playerIndexMap.set(clientId, playerIndex);
+            console.log(`[DEBUG] 플레이어 매핑: ${clientId} -> 인덱스 ${playerIndex}`);
+        } else {
+            console.log(`[DEBUG] 플레이어 인덱스 없음: ${clientId}`);
+        }
+    });
+    
+    console.log(`[DEBUG] playerIndexMap 설정 완료: 총 ${playerIndexMap.size}명 매핑`);
+    
+    // GameManager에서 실제 게임 인스턴스 가져오기 (추후 개선 필요)
+    const gameInfo = gameManager.getGameInfo();
+    const redLightGreenLightGame = gameManager.getCurrentMiniGameInstance();
+    
+    if (redLightGreenLightGame instanceof RedLightGreenLightGame) {
+        // 콜백 설정
+        redLightGreenLightGame.setCallbacks({
+            onLightChange: (redLightOn: boolean) => {
+                // 신호등 변화 브로드캐스트
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.REDLIGHTGREENLIGHT_LIGHT_CHANGED,
+                    data: {
+                        redLightOn: redLightOn
+                    }
+                });
+                console.log(`신호등 변화 브로드캐스트: ${redLightOn ? '빨간불 ON' : '초록불 ON'}`);
+            },
+            onPlayerResult: (playerIndex: number, isSuccess: boolean) => {
+                // 플레이어 결과 브로드캐스트
+                console.log(`[DEBUG] onPlayerResult 콜백 실행: playerIndex=${playerIndex}, isSuccess=${isSuccess}`);
+                
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT,
+                    data: {
+                        playerIndex: playerIndex,
+                        isSuccess: isSuccess
+                    }
+                });
+                
+                console.log(`[DEBUG] 브로드캐스트 전송 완료: 플레이어 ${playerIndex} - ${isSuccess ? '성공' : '실패'}`);
+                console.log(`플레이어 결과 브로드캐스트: 플레이어 ${playerIndex} - ${isSuccess ? '성공' : '실패'}`);
+            },
+            onPlayerPosition: (progressArray: number[]) => {
+                // 모든 플레이어 위치 브로드캐스트
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION,
+                    data: {
+                        progress: progressArray
+                    }
+                });
+                console.log(`플레이어 위치 브로드캐스트: [${progressArray.map(p => p.toFixed(2)).join(', ')}]`);
+            },
+            onGameEndBroadcast: () => {
+                // Red Light Green Light 게임 종료 브로드캐스트
+                roomManager.broadcast({
+                    code: ResponseCode.SUCCESS,
+                    signal: ResponseSignal.REDLIGHTGREENLIGHT_GAME_RESULT,
+                    data: {}
+                });
+                console.log('Red Light Green Light 게임 종료 브로드캐스트 완료');
+            },
+            onRequestGameEnd: () => {
+                // GameManager를 통해 게임 종료 (SUBGAME_ENDED 브로드캐스트)
+                console.log('Red Light Green Light 게임에서 GameManager에게 게임 종료 요청');
+                gameManager.endCurrentMiniGame();
+            },
+            playerIndexMap: playerIndexMap
+        });
+    }
+    
+    // 게임 시작 패킷 전송
+    const timeLimitMs = 60000;
+    roomManager.broadcast({
+        code: ResponseCode.SUCCESS,
+        signal: ResponseSignal.REDLIGHTGREENLIGHT_GAME_STARTED,
+        data: {
+            timeLimitMs: timeLimitMs
+        }
+    });
+    
+    console.log(`Red Light Green Light 게임 시작 패킷 전송 완료 (제한시간: ${timeLimitMs}ms)`);
+}
+
+// Red Light Green Light 게임 신호등 변화 시작 (클래스 사용)
+function startRedLightGreenLightIntervalFromClass(): void {
+    console.log('Red Light Green Light 신호등 변화 시작! (클래스 버전)');
+    
+    // 현재 미니게임 인스턴스 가져오기
+    const redLightGreenLightGame = gameManager.getCurrentMiniGameInstance();
+    
+    if (redLightGreenLightGame instanceof RedLightGreenLightGame) {
+        // 신호등 변화는 이미 onGameStart()에서 시작되므로 여기서는 로그만 출력
+        console.log('Red Light Green Light 신호등 변화는 게임 시작 시 자동으로 활성화됨');
+    } else {
+        console.error('Red Light Green Light 게임 인스턴스를 찾을 수 없습니다!');
+    }
+}
+
+// Red Light Green Light 게임 플레이어 결과 처리
+function handleRedLightGreenLightPlayerResult(client: Client, data: any): void {
+    console.log(`클라이언트 ${client.id}가 Red Light Green Light 게임 결과를 전송했습니다.`);
+    
+    // 클라이언트가 방에 있는지 확인
+    if (!client.isInRoom) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: 방에 참여하지 않음`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: '방에 참여하지 않은 상태에서는 게임 결과를 전송할 수 없습니다.',
+            errorCode: 'NOT_IN_ROOM'
+        }));
+        return;
+    }
+
+    // 게임이 진행 중인지 확인
+    const gameInfo = gameManager.getGameInfo();
+    if (gameInfo.gameState !== GameState.IN_PROGRESS) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: 메인 게임이 진행 중이 아님`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: '메인 게임이 진행 중이 아닙니다.',
+            errorCode: 'GAME_NOT_IN_PROGRESS'
+        }));
+        return;
+    }
+
+    // MINIGAME 페이즈에서만 허용
+    if (gameInfo.gamePhase !== GamePhase.MINIGAME) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: MINIGAME 페이즈가 아님`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: '현재 미니게임 진행 중이 아닙니다.',
+            errorCode: 'NOT_MINIGAME_PHASE'
+        }));
+        return;
+    }
+
+    // 현재 게임이 Red Light Green Light인지 확인
+    if (gameInfo.currentMiniGame !== 'RED_LIGHT_GREEN_LIGHT') {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: 현재 게임이 Red Light Green Light가 아님`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: '현재 Red Light Green Light 게임이 진행 중이 아닙니다.',
+            errorCode: 'NOT_REDLIGHT_GREENLIGHT_GAME'
+        }));
+        return;
+    }
+
+    // 요청 데이터 검증
+    if (typeof data.isSuccess !== 'boolean') {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: 잘못된 데이터 형식`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: 'isSuccess 필드가 올바르지 않습니다.',
+            errorCode: 'INVALID_DATA_FORMAT'
+        }));
+        return;
+    }
+
+    // 플레이어의 인덱스 가져오기
+    const playerIndex = roomManager.getPlayerIndex(client.id);
+    if (playerIndex === -1) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: 플레이어 인덱스를 찾을 수 없음`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: '플레이어 정보를 찾을 수 없습니다.',
+            errorCode: 'PLAYER_NOT_FOUND'
+        }));
+        return;
+    }
+
+    console.log(`클라이언트 ${client.id} (인덱스: ${playerIndex}) Red Light Green Light 결과: ${data.isSuccess ? '성공' : '실패'}`);
+
+    // GameManager에 결과 전달 (게임 클래스에서 중복 체크와 브로드캐스트 처리)
+    console.log(`[DEBUG] GameManager.handlePlayerAction 호출 시작: playerId=${client.id}, success=${data.isSuccess}`);
+    const success = gameManager.handlePlayerAction(client.id, {
+        success: data.isSuccess,
+        timeTaken: 0 // 추후 필요시 클라이언트에서 전송받도록 확장 가능
+    });
+    console.log(`[DEBUG] GameManager.handlePlayerAction 결과: ${success}`);
+
+    if (!success) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 결과 전송 실패: 이미 결과를 제출했거나 처리 실패`);
+        
+        // 실패 시에도 모든 플레이어에게 브로드캐스트 (처리 실패 상태로)
+        roomManager.broadcast({
+            code: ResponseCode.SUCCESS,
+            signal: ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT,
+            data: {
+                playerIndex: playerIndex,
+                isSuccess: false // 처리 실패는 게임 실패로 간주
+            }
+        });
+        
+        console.log(`플레이어 결과 브로드캐스트 (처리 실패): 플레이어 ${playerIndex} - 실패`);
+        
+        // 요청한 플레이어에게는 에러 응답도 전송
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT, {
+            message: '게임 결과 처리에 실패했습니다. 이미 결과를 제출했을 수 있습니다.',
+            errorCode: 'PROCESSING_FAILED'
+        }));
+        return;
+    }
+
+    console.log(`Red Light Green Light 게임 결과 처리 완료: 플레이어 ${playerIndex} - ${data.isSuccess ? '성공' : '실패'}`);
+}
+
+// Red Light Green Light 게임 플레이어 위치 처리
+function handleRedLightGreenLightPlayerPosition(client: Client, data: any): void {
+    console.log(`클라이언트 ${client.id}가 Red Light Green Light 위치 정보를 전송했습니다.`);
+    
+    // 클라이언트가 방에 있는지 확인
+    if (!client.isInRoom) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 위치 전송 실패: 방에 참여하지 않음`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: '방에 참여하지 않은 상태에서는 위치 정보를 전송할 수 없습니다.',
+            errorCode: 'NOT_IN_ROOM'
+        }));
+        return;
+    }
+
+    // 게임이 진행 중인지 확인
+    const gameInfo = gameManager.getGameInfo();
+    if (gameInfo.gameState !== GameState.IN_PROGRESS) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 위치 전송 실패: 메인 게임이 진행 중이 아님`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: '메인 게임이 진행 중이 아닙니다.',
+            errorCode: 'GAME_NOT_IN_PROGRESS'
+        }));
+        return;
+    }
+
+    // MINIGAME 페이즈에서만 허용
+    if (gameInfo.gamePhase !== GamePhase.MINIGAME) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 위치 전송 실패: MINIGAME 페이즈가 아님`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: '현재 미니게임 진행 중이 아닙니다.',
+            errorCode: 'NOT_MINIGAME_PHASE'
+        }));
+        return;
+    }
+
+    // 현재 게임이 Red Light Green Light인지 확인
+    if (gameInfo.currentMiniGame !== 'RED_LIGHT_GREEN_LIGHT') {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 위치 전송 실패: 현재 게임이 Red Light Green Light가 아님`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: '현재 Red Light Green Light 게임이 진행 중이 아닙니다.',
+            errorCode: 'NOT_REDLIGHT_GREENLIGHT_GAME'
+        }));
+        return;
+    }
+
+    // 요청 데이터 검증
+    if (typeof data.progress !== 'number' || !Number.isInteger(data.progress)) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 위치 전송 실패: 잘못된 데이터 형식 (정수가 아님)`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: 'progress 필드는 정수여야 합니다.',
+            errorCode: 'INVALID_DATA_FORMAT'
+        }));
+        return;
+    }
+
+    // progress 값 범위 확인 (0~1000)
+    if (data.progress < 0 || data.progress > 1000) {
+        console.log(`클라이언트 ${client.id} Red Light Green Light 위치 전송 실패: progress 값이 범위를 벗어남 (${data.progress})`);
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: 'progress 값은 0과 1000 사이의 정수여야 합니다.',
+            errorCode: 'INVALID_PROGRESS_VALUE'
+        }));
+        return;
+    }
+
+    // 게임 인스턴스에서 위치 업데이트
+    const redLightGreenLightGame = gameManager.getCurrentMiniGameInstance();
+    if (redLightGreenLightGame instanceof RedLightGreenLightGame) {
+        const success = redLightGreenLightGame.updatePlayerPosition(client.id, data.progress);
+        
+        if (success) {
+            console.log(`클라이언트 ${client.id} 위치 업데이트 성공: ${data.progress}/1000`);
+            
+            // 위치 업데이트 성공 시 모든 플레이어의 현재 위치 정보를 해당 클라이언트에게 응답
+            const currentPositions = redLightGreenLightGame.getCurrentPlayerPositions();
+            sendResponse(client, createSuccessResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+                progress: currentPositions
+            }));
+            
+            console.log(`위치 업데이트 응답 전송: [${currentPositions.join(', ')}]`);
+        } else {
+            // 실패 응답 전송
+            sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+                message: '위치 업데이트에 실패했습니다. 이미 게임을 완료했을 수 있습니다.',
+                errorCode: 'UPDATE_FAILED'
+            }));
+            
+            console.log(`클라이언트 ${client.id} 위치 업데이트 실패`);
+        }
+    } else {
+        console.error('Red Light Green Light 게임 인스턴스를 찾을 수 없습니다!');
+        sendResponse(client, createErrorResponse(ResponseSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION, {
+            message: '게임 인스턴스를 찾을 수 없습니다.',
+            errorCode: 'GAME_INSTANCE_NOT_FOUND'
+        }));
+    }
 }
 
 // GameManager 이벤트 핸들러 설정 (재사용 가능한 함수)
@@ -761,6 +1125,8 @@ function setupGameManagerEventHandlers(): void {
                     startTugOfWarGame();
                 } else if (currentGameType === 'DALGONA') {
                     startDalgonaGame();
+                } else if (currentGameType === 'RED_LIGHT_GREEN_LIGHT') {
+                    startRedLightGreenLightGameFromClass();
                 }
             }
             
@@ -771,11 +1137,13 @@ function setupGameManagerEventHandlers(): void {
                 
                 if (currentGameType === 'TUG_OF_WAR') {
                     startTugOfWarGameInterval();
+                } else if (currentGameType === 'RED_LIGHT_GREEN_LIGHT') {
+                    startRedLightGreenLightIntervalFromClass();
                 }
                 // 달고나 게임은 별도 인터벌이 필요없음 (클라이언트 독립 실행)
             }
             
-            // 미니게임이 끝나면 줄다리기 인터벌과 타이머 정리
+            // 미니게임이 끝나면 미니게임 인터벌과 타이머 정리
             if (phase !== GamePhase.MINIGAME) {
                 if (tugOfWarGameInterval) {
                     clearInterval(tugOfWarGameInterval);
@@ -785,7 +1153,15 @@ function setupGameManagerEventHandlers(): void {
                     clearTimeout(tugOfWarGameTimer);
                     tugOfWarGameTimer = null;
                 }
-                console.log('줄다리기 게임 인터벌과 타이머 정리 완료');
+                if (redLightGreenLightTimer) {
+                    clearTimeout(redLightGreenLightTimer);
+                    redLightGreenLightTimer = null;
+                }
+                if (redLightGreenLightGameTimer) {
+                    clearTimeout(redLightGreenLightGameTimer);
+                    redLightGreenLightGameTimer = null;
+                }
+                console.log('미니게임 인터벌과 타이머 정리 완료');
             }
         },
         onPlayerEliminated: (eliminatedPlayers: string[]) => {
@@ -795,7 +1171,7 @@ function setupGameManagerEventHandlers(): void {
         onGameEnd: (winnerId: string | null) => {
             console.log(`게임 종료: 우승자 ${winnerId || '없음'}`);
             
-            // 줄다리기 게임 인터벌과 타이머 정리
+            // 미니게임 인터벌과 타이머 정리
             if (tugOfWarGameInterval) {
                 clearInterval(tugOfWarGameInterval);
                 tugOfWarGameInterval = null;
@@ -804,7 +1180,15 @@ function setupGameManagerEventHandlers(): void {
                 clearTimeout(tugOfWarGameTimer);
                 tugOfWarGameTimer = null;
             }
-            console.log('게임 종료 - 줄다리기 게임 인터벌과 타이머 정리 완료');
+            if (redLightGreenLightTimer) {
+                clearTimeout(redLightGreenLightTimer);
+                redLightGreenLightTimer = null;
+            }
+            if (redLightGreenLightGameTimer) {
+                clearTimeout(redLightGreenLightGameTimer);
+                redLightGreenLightGameTimer = null;
+            }
+            console.log('게임 종료 - 미니게임 인터벌과 타이머 정리 완료');
             
             // 우승자의 플레이어 인덱스 구하기
             let winnerPlayerIndex = -1;
@@ -855,6 +1239,7 @@ function resetGameRoom(): void {
     tugOfWarRightTeam = [];
     tugOfWarLeftTeamScore = 0;
     tugOfWarRightTeamScore = 0;
+    redLightOn = true; // Red Light Green Light 상태 초기화
     
     // 모든 게임 타이머와 인터벌 정리
     if (dalgonaGameTimer) {
@@ -868,6 +1253,14 @@ function resetGameRoom(): void {
     if (tugOfWarGameTimer) {
         clearTimeout(tugOfWarGameTimer);
         tugOfWarGameTimer = null;
+    }
+    if (redLightGreenLightTimer) {
+        clearTimeout(redLightGreenLightTimer);
+        redLightGreenLightTimer = null;
+    }
+    if (redLightGreenLightGameTimer) {
+        clearTimeout(redLightGreenLightGameTimer);
+        redLightGreenLightGameTimer = null;
     }
     
     // GameManager 리셋 (게임 상태 초기화)
@@ -1102,6 +1495,14 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
                     
                 case RequestSignal.TUGOFWAR_GAME_PRESS_COUNT:
                     handleTugOfWarGamePressCount(client, data);
+                    break;
+                    
+                case RequestSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT:
+                    handleRedLightGreenLightPlayerResult(client, data);
+                    break;
+                    
+                case RequestSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION:
+                    handleRedLightGreenLightPlayerPosition(client, data);
                     break;
                     
                 default:

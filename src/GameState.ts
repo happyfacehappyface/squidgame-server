@@ -17,7 +17,8 @@ export enum GamePhase {
 // 미니게임 타입
 export enum MiniGameType {
     DALGONA = "DALGONA",
-    TUG_OF_WAR = "TUG_OF_WAR"
+    TUG_OF_WAR = "TUG_OF_WAR",
+    RED_LIGHT_GREEN_LIGHT = "RED_LIGHT_GREEN_LIGHT"
 }
 
 // 플레이어 상태

@@ -2,6 +2,7 @@ import { GameState, GamePhase, MiniGameType, PlayerStatus } from './GameState';
 import { IMiniGame, MiniGameResult, EndConditionResult } from './games/IMiniGame';
 import { DalgonaGame } from './games/DalgonaGame';
 import { TugOfWarGame } from './games/TugOfWarGame';
+import { RedLightGreenLightGame } from './games/RedLightGreenLightGame';
 
 export interface PlayerData {
     id: string;
@@ -147,8 +148,15 @@ export class GameManager {
     
     // 랜덤 미니게임 선택 (중복 방지)
     private selectRandomMiniGame(): MiniGameType {
+
+        
+
+
         // 모든 사용 가능한 게임 타입들을 동적으로 가져오기
         const allGameTypes = Object.values(MiniGameType) as MiniGameType[];
+
+        // FOR DEBUG PURPOSE
+        return allGameTypes[2];
         
         // 아직 플레이하지 않은 게임들만 필터링
         const availableGames = allGameTypes.filter(gameType => !this.playedGames.has(gameType));
@@ -170,7 +178,8 @@ export class GameManager {
         // 게임 이름 매핑
         const gameNameMap: Record<MiniGameType, string> = {
             [MiniGameType.DALGONA]: '달고나',
-            [MiniGameType.TUG_OF_WAR]: '줄다리기'
+            [MiniGameType.TUG_OF_WAR]: '줄다리기',
+            [MiniGameType.RED_LIGHT_GREEN_LIGHT]: 'Red Light Green Light'
         };
         
         const playedGameNames = Array.from(this.playedGames).map(g => gameNameMap[g]).join(', ');
@@ -186,6 +195,8 @@ export class GameManager {
                 return new DalgonaGame();
             case MiniGameType.TUG_OF_WAR:
                 return new TugOfWarGame();
+            case MiniGameType.RED_LIGHT_GREEN_LIGHT:
+                return new RedLightGreenLightGame();
             default:
                 throw new Error(`지원되지 않는 게임 타입: ${gameType}`);
         }
@@ -323,6 +334,11 @@ export class GameManager {
             return null;
         }
         return this.currentMiniGame.getGameState();
+    }
+    
+    // 현재 미니게임 인스턴스 반환 (콜백 설정 등을 위해)
+    public getCurrentMiniGameInstance(): IMiniGame | null {
+        return this.currentMiniGame;
     }
     
     // 서브게임 준비 완료 설정

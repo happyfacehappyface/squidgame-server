@@ -96,16 +96,18 @@ export class TugOfWarGame extends BaseMiniGame {
         const survivors: string[] = [];
         const eliminated: string[] = [];
         
-        // 더 강한 팀이 승리, 진 팀은 탈락
-        const winningTeam = this.teamAPower > this.teamBPower ? this.teamA : this.teamB;
-        const losingTeam = this.teamAPower > this.teamBPower ? this.teamB : this.teamA;
+        // 팀B(오른쪽)가 승리하거나 동점인 경우 팀B 승리
+        // 팀A(왼쪽)가 명확히 더 강한 경우에만 팀A 승리
+        const isLeftWin = this.teamAPower > this.teamBPower;
         
-        // 동점인 경우 모든 플레이어 생존 (또는 랜덤 선택)
-        if (this.teamAPower === this.teamBPower) {
-            survivors.push(...this.players);
+        if (isLeftWin) {
+            // 왼쪽 팀(팀A)이 승리
+            survivors.push(...this.teamA);
+            eliminated.push(...this.teamB);
         } else {
-            survivors.push(...winningTeam);
-            eliminated.push(...losingTeam);
+            // 오른쪽 팀(팀B)이 승리 (동점 포함)
+            survivors.push(...this.teamB);
+            eliminated.push(...this.teamA);
         }
         
         return {
@@ -117,8 +119,7 @@ export class TugOfWarGame extends BaseMiniGame {
                 teamB: this.teamB,
                 teamAPower: this.teamAPower,
                 teamBPower: this.teamBPower,
-                winningTeam: this.teamAPower > this.teamBPower ? 'TEAM_A' : 
-                           this.teamBPower > this.teamAPower ? 'TEAM_B' : 'TIE',
+                winningTeam: this.teamAPower > this.teamBPower ? 'TEAM_A' : 'TEAM_B',  // 동점 시 팀B 승리
                 gameTime: this.gameTime,
                 playerPowers: Object.fromEntries(this.playerPowers)
             }
