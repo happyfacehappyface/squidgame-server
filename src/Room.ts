@@ -31,6 +31,7 @@ export class Room {
     public status: RoomStatus;
     public gameStartTime: number | null;
     public readyClients: Set<string>; // 준비 완료된 클라이언트 ID들
+    public gamePlayerIndices: Map<string, number>; // 게임 시작 시점의 고정된 playerIndex
 
     constructor(roomId: string, maxPlayers: number = 10) {
         this.id = roomId;
@@ -40,6 +41,7 @@ export class Room {
         this.status = RoomStatus.WAITING;
         this.gameStartTime = null;
         this.readyClients = new Set<string>();
+        this.gamePlayerIndices = new Map<string, number>();
     }
 
     // 플레이어 추가
@@ -114,6 +116,10 @@ export class Room {
     public startGame(): void {
         this.status = RoomStatus.PLAYING;
         this.gameStartTime = Date.now();
+        
+        // 게임 시작 시점의 playerIndex를 고정
+        this.fixGamePlayerIndices();
+        
         console.log(`방 ${this.id}: 게임 시작`);
     }
 
@@ -121,7 +127,18 @@ export class Room {
     public endGame(): void {
         this.status = RoomStatus.WAITING;
         this.readyClients.clear();
+        this.gamePlayerIndices.clear(); // 게임 종료 시 고정 인덱스 초기화
         console.log(`방 ${this.id}: 게임 종료`);
+    }
+
+    // 게임 시작 시점의 playerIndex를 고정
+    private fixGamePlayerIndices(): void {
+        this.gamePlayerIndices.clear();
+        const clientIds = Array.from(this.clients.keys());
+        clientIds.forEach((clientId, index) => {
+            this.gamePlayerIndices.set(clientId, index);
+        });
+        console.log(`방 ${this.id}: 게임 시작 시점 playerIndex 고정 완료 (${this.gamePlayerIndices.size}명)`);
     }
 
     // 클라이언트 준비 완료 설정
@@ -140,8 +157,19 @@ export class Room {
         return this.readyClients.size;
     }
 
-    // 클라이언트의 playerIndex 반환 (입장 순서)
+    // 클라이언트의 playerIndex 반환 (게임 중에는 고정된 인덱스 사용)
     public getPlayerIndex(clientId: string): number {
+        // 게임이 진행 중이면 고정된 인덱스 사용
+        if (this.status === RoomStatus.PLAYING) {
+            const fixedIndex = this.gamePlayerIndices.get(clientId);
+            if (fixedIndex !== undefined) {
+                return fixedIndex;
+            }
+            // 고정된 인덱스가 없으면 -1 반환 (탈락한 플레이어)
+            return -1;
+        }
+        
+        // 게임이 진행 중이 아니면 현재 순서 기준
         const clientIds = Array.from(this.clients.keys());
         return clientIds.indexOf(clientId);
     }
