@@ -156,7 +156,7 @@ export class GameManager {
         const allGameTypes = Object.values(MiniGameType) as MiniGameType[];
 
         // FOR DEBUG PURPOSE
-        return allGameTypes[2];
+        //return allGameTypes[2];
         
         // 아직 플레이하지 않은 게임들만 필터링
         const availableGames = allGameTypes.filter(gameType => !this.playedGames.has(gameType));
