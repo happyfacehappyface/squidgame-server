@@ -938,7 +938,7 @@ function startRedLightGreenLightGameFromClass(): void {
     }
     
     // 게임 시작 패킷 전송
-    const timeLimitMs = 60000;
+    const timeLimitMs = 30000;
     roomManager.broadcast({
         code: ResponseCode.SUCCESS,
         signal: ResponseSignal.REDLIGHTGREENLIGHT_GAME_STARTED,

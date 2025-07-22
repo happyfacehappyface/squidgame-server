@@ -410,14 +410,6 @@ export class GameManager {
         
         console.log(`플레이어 ${playerId} (${player.name})가 연결 해제로 인해 탈락했습니다.`);
         
-        // 게임 종료 조건 확인
-        this.checkGameEndConditions();
-        
-        // 서브게임 진행 중이라면 서브게임 종료 조건 확인
-        if (this.gamePhase === GamePhase.MINIGAME && this.currentMiniGame) {
-            this.checkSubGameEndConditions();
-        }
-        
         return true;
     }
     
