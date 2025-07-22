@@ -56,6 +56,9 @@ gameManager.setEventHandlers({
             
             console.log(`PREPARE 페이즈 - 현재 미니게임 타입: ${currentGameType}`);
             
+            // 15초 타이머 시작
+            gameManager.startSubGameReadyTimer();
+            
             if (currentGameType === 'TUG_OF_WAR') {
                 startTugOfWarGame();
             } else if (currentGameType === 'DALGONA') {

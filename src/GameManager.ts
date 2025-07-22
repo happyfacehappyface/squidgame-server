@@ -22,6 +22,7 @@ export class GameManager {
     private restDuration: number = 3000; // 3초 휴식
     private readyPlayers: Set<string> = new Set(); // 서브게임 준비 완료한 플레이어들
     private playedGames: Set<MiniGameType> = new Set(); // 이미 플레이한 게임들
+    private subGameReadyTimer: NodeJS.Timeout | null = null; // 서브게임 준비 15초 타이머
     private onGameStateChange?: (state: GameState, phase: GamePhase) => void;
     private onPlayerEliminated?: (players: string[]) => void;
     private onGameEnd?: (winner: string | null) => void;
@@ -341,7 +342,7 @@ export class GameManager {
         return this.currentMiniGame;
     }
     
-    // 서브게임 준비 완료 설정
+    // 서브게임 준비 완료 설정 (15초 타이머 기반)
     public setPlayerReadyForSubGame(playerId: string): boolean {
         if (this.gameState !== GameState.IN_PROGRESS) {
             return false;
@@ -352,8 +353,7 @@ export class GameManager {
             return false;
         }
         
-        // 죽은 플레이어도 관전을 위해 SubGameReady를 받을 수 있도록 허용
-        // 단, 생존 플레이어만 readyPlayers에 추가
+        // 생존 플레이어만 readyPlayers에 추가
         if (player.status === PlayerStatus.ALIVE) {
             this.readyPlayers.add(playerId);
             console.log(`플레이어 ${playerId} 서브게임 준비 완료 (${this.readyPlayers.size}/${this.getAlivePlayers().length})`);
@@ -364,8 +364,8 @@ export class GameManager {
         // 모든 생존 플레이어가 준비 완료되었는지 확인
         const alivePlayers = this.getAlivePlayers();
         if (this.readyPlayers.size === alivePlayers.length && alivePlayers.length > 0) {
-            console.log('모든 플레이어가 서브게임 준비 완료!');
-            this.readyPlayers.clear(); // 다음 서브게임을 위해 초기화
+            console.log('모든 플레이어가 서브게임 준비 완료! 15초 타이머를 즉시 종료합니다.');
+            this.clearSubGameReadyTimer();
             
             if (this.onSubGameReady) {
                 this.onSubGameReady();
@@ -375,6 +375,61 @@ export class GameManager {
         }
         
         return false;
+    }
+
+    // 서브게임 준비 15초 타이머 시작
+    public startSubGameReadyTimer(): void {
+        console.log('서브게임 준비 15초 타이머 시작');
+        
+        // 기존 타이머가 있다면 정리
+        this.clearSubGameReadyTimer();
+        
+        this.subGameReadyTimer = setTimeout(() => {
+            console.log('서브게임 준비 15초 타이머 종료! 준비하지 않은 플레이어들을 탈락 처리합니다.');
+            this.handleSubGameReadyTimeout();
+        }, 15000); // 15초
+    }
+
+    // 서브게임 준비 타이머 정리
+    private clearSubGameReadyTimer(): void {
+        if (this.subGameReadyTimer) {
+            clearTimeout(this.subGameReadyTimer);
+            this.subGameReadyTimer = null;
+            console.log('서브게임 준비 타이머 정리 완료');
+        }
+    }
+
+    // 서브게임 준비 타임아웃 처리
+    private handleSubGameReadyTimeout(): void {
+        const alivePlayers = this.getAlivePlayers();
+        const readyPlayerIds = Array.from(this.readyPlayers);
+        
+        // 준비하지 않은 플레이어들 찾기
+        const notReadyPlayers = alivePlayers.filter(playerId => !readyPlayerIds.includes(playerId));
+        
+        console.log(`준비 완료된 플레이어: ${readyPlayerIds.length}명`);
+        console.log(`준비하지 않은 플레이어: ${notReadyPlayers.length}명`);
+        
+        // 준비하지 않은 플레이어들을 탈락 처리
+        notReadyPlayers.forEach(playerId => {
+            const player = this.players.get(playerId);
+            if (player && player.status === PlayerStatus.ALIVE) {
+                player.status = PlayerStatus.ELIMINATED;
+                player.eliminatedInRound = this.currentRound;
+                console.log(`플레이어 ${playerId} (${player.name})가 준비하지 않아 탈락했습니다.`);
+            }
+        });
+        
+        // 준비 완료된 플레이어들에게만 서브게임 시작
+        if (readyPlayerIds.length > 0) {
+            console.log('준비 완료된 플레이어들에게 서브게임 시작!');
+            if (this.onSubGameReady) {
+                this.onSubGameReady();
+            }
+        } else {
+            console.log('준비 완료된 플레이어가 없습니다. 게임 종료 조건을 확인합니다.');
+            this.checkGameEndConditions();
+        }
     }
     
     // 서브게임 준비 상태 초기화
@@ -550,6 +605,9 @@ export class GameManager {
             clearTimeout(this.gameTimer);
             this.gameTimer = null;
         }
+        
+        // 서브게임 준비 타이머 정리
+        this.clearSubGameReadyTimer();
         
         this.gameState = GameState.WAITING;
         this.gamePhase = GamePhase.REST;
