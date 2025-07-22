@@ -27,7 +27,11 @@ export class TugOfWarGame extends BaseMiniGame {
     }
     
     protected onGameStart(): void {
-        this.divideTeams();
+        // 외부에서 팀이 설정되지 않은 경우에만 자동으로 팀 나누기
+        if (this.teamA.length === 0 && this.teamB.length === 0) {
+            this.divideTeams();
+        }
+        
         this.startTime = Date.now();
         this.teamAPower = 0;
         this.teamBPower = 0;
@@ -43,6 +47,13 @@ export class TugOfWarGame extends BaseMiniGame {
     
     protected onGameEnd(): void {
         console.log(`줄다리기 종료: 팀A 총력 ${this.teamAPower}, 팀B 총력 ${this.teamBPower}`);
+    }
+    
+    // 외부에서 팀 구성을 설정할 수 있는 메서드
+    public setTeams(teamA: string[], teamB: string[]): void {
+        this.teamA = [...teamA];
+        this.teamB = [...teamB];
+        console.log(`팀 구성 설정 - 팀A: ${this.teamA.join(', ')}, 팀B: ${this.teamB.join(', ')}`);
     }
     
     private divideTeams(): void {

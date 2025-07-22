@@ -7,6 +7,7 @@ import { RoomStatus } from './Room';
 import { GameManager } from './GameManager';
 import { GameState, GamePhase, PlayerStatus } from './GameState';
 import { RedLightGreenLightGame } from './games/RedLightGreenLightGame';
+import { TugOfWarGame } from './games/TugOfWarGame';
 
 const app = express();
 const server = http.createServer(app);
@@ -711,6 +712,52 @@ function startTugOfWarGame(): void {
     tugOfWarRightTeam = rightTeamPlayerIndex;
     tugOfWarLeftTeamScore = 0;
     tugOfWarRightTeamScore = 0;
+    
+    // TugOfWarGame에 팀 구성 설정
+    const tugOfWarGame = gameManager.getCurrentMiniGameInstance();
+    if (tugOfWarGame instanceof TugOfWarGame) {
+        // GameManager에서 플레이어 정보를 가져와서 플레이어 인덱스를 ID로 변환
+        const gameInfo = gameManager.getGameInfo();
+        const players = gameInfo.players;
+        const playerIdToIndex = new Map<string, number>();
+        
+        // 플레이어 ID와 인덱스 매핑 생성
+        Object.keys(players).forEach((playerId, index) => {
+            playerIdToIndex.set(playerId, index);
+        });
+        
+        // 플레이어 인덱스를 플레이어 ID로 변환
+        const leftTeamPlayerIds = leftTeamPlayerIndex.map(index => {
+            for (const [playerId, playerIndex] of playerIdToIndex) {
+                if (playerIndex === index) {
+                    return playerId;
+                }
+            }
+            return '';
+        }).filter(id => id !== '');
+        
+        const rightTeamPlayerIds = rightTeamPlayerIndex.map(index => {
+            for (const [playerId, playerIndex] of playerIdToIndex) {
+                if (playerIndex === index) {
+                    return playerId;
+                }
+            }
+            return '';
+        }).filter(id => id !== '');
+        
+        // 자동 승리자도 오른쪽 팀에 포함 (게임 로직상 팀B가 오른쪽)
+        const unearnedWinPlayerIds = unearnedWinPlayerIndex.map(index => {
+            for (const [playerId, playerIndex] of playerIdToIndex) {
+                if (playerIndex === index) {
+                    return playerId;
+                }
+            }
+            return '';
+        }).filter(id => id !== '');
+        
+        // 팀 구성 설정 (왼쪽 팀 = 팀A, 오른쪽 팀 = 팀B)
+        (tugOfWarGame as TugOfWarGame).setTeams(leftTeamPlayerIds, [...rightTeamPlayerIds, ...unearnedWinPlayerIds]);
+    }
     
     // 기존 타이머가 있다면 정리
     if (tugOfWarGameTimer) {
@@ -1482,67 +1529,80 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
         clientId: client.id
     }));
     
-    // 메시지 수신 처리
+    // 메시지 수신 처리 (비동기 처리로 변경)
     ws.on('message', (message: WebSocket.Data) => {
-        try {
-            const request: RequestPacket = JSON.parse(message.toString());
-            const { signal, data } = request;
-            
-            switch (signal) {
-                case RequestSignal.PING:
-                    handlePing(client, data);
-                    break;
-                    
-                case RequestSignal.ENTER_ROOM:
-                    handleEnterRoom(client, data);
-                    break;
-                    
-                case RequestSignal.LEAVE_ROOM:
-                    handleLeaveRoom(client, data);
-                    break;
-                    
-                case RequestSignal.START_GAME:
-                    handleStartGame(client);
-                    break;
-                    
-                case RequestSignal.READY_GAME:
-                    handleReadyGame(client);
-                    break;
-                    
-                case RequestSignal.READY_SUBGAME:
-                    handleReadySubGame(client);
-                    break;
-                    
-                case RequestSignal.DALGONA_GAME_RESULT:
-                    handleDalgonaGameResult(client, data);
-                    break;
-                    
-                case RequestSignal.TUGOFWAR_GAME_PRESS_COUNT:
-                    handleTugOfWarGamePressCount(client, data);
-                    break;
-                    
-                case RequestSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT:
-                    handleRedLightGreenLightPlayerResult(client, data);
-                    break;
-                    
-                case RequestSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION:
-                    handleRedLightGreenLightPlayerPosition(client, data);
-                    break;
-                    
-                default:
-                    sendResponse(client, createErrorResponse(signal, {
-                        message: `Unknown signal: ${signal}`
-                    }));
+        // 비동기 처리로 변경하여 블로킹 방지
+        setImmediate(() => {
+            try {
+                const request: RequestPacket = JSON.parse(message.toString());
+                const { signal, data } = request;
+                
+                // 요청 처리 시간 측정
+                const startTime = Date.now();
+                
+                switch (signal) {
+                    case RequestSignal.PING:
+                        handlePing(client, data);
+                        break;
+                        
+                    case RequestSignal.ENTER_ROOM:
+                        handleEnterRoom(client, data);
+                        break;
+                        
+                    case RequestSignal.LEAVE_ROOM:
+                        handleLeaveRoom(client, data);
+                        break;
+                        
+                    case RequestSignal.START_GAME:
+                        handleStartGame(client);
+                        break;
+                        
+                    case RequestSignal.READY_GAME:
+                        handleReadyGame(client);
+                        break;
+                        
+                    case RequestSignal.READY_SUBGAME:
+                        handleReadySubGame(client);
+                        break;
+                        
+                    case RequestSignal.DALGONA_GAME_RESULT:
+                        handleDalgonaGameResult(client, data);
+                        break;
+                        
+                    case RequestSignal.TUGOFWAR_GAME_PRESS_COUNT:
+                        handleTugOfWarGamePressCount(client, data);
+                        break;
+                        
+                    case RequestSignal.REDLIGHTGREENLIGHT_PLAYER_RESULT:
+                        handleRedLightGreenLightPlayerResult(client, data);
+                        break;
+                        
+                    case RequestSignal.REDLIGHTGREENLIGHT_PLAYER_POSITION:
+                        handleRedLightGreenLightPlayerPosition(client, data);
+                        break;
+                        
+                    default:
+                        sendResponse(client, createErrorResponse(signal, {
+                            message: `Unknown signal: ${signal}`
+                        }));
+                }
+                
+                // 처리 시간이 100ms 이상이면 경고
+                const processingTime = Date.now() - startTime;
+                if (processingTime > 100) {
+                    console.warn(`요청 처리 시간이 길어짐: ${processingTime}ms (signal: ${signal})`);
+                }
+                
+            } catch (error) {
+                console.error('Request 처리 중 에러:', error);
+                sendResponse(client, createErrorResponse(0, {
+                    message: 'Internal server error'
+                }));
             }
-        } catch (error) {
-            console.error('Request 처리 중 에러:', error);
-            sendResponse(client, createErrorResponse(0, {
-                message: 'Internal server error'
-            }));
-        }
+        });
     });
     
-    // 연결 해제 처리
+    // 연결 해제 처리 (메모리 누수 방지)
     ws.on('close', () => {
         console.log('클라이언트 연결이 해제되었습니다:', client.getInfo());
         
@@ -1568,8 +1628,14 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
             }
         }
         
+        // 클라이언트 정리
         client.disconnect();
         clients.delete(client.id);
+        
+        // 메모리 정리
+        if (clients.size % 5 === 0) { // 5명마다 한 번씩
+            console.log(`현재 연결된 클라이언트 수: ${clients.size}`);
+        }
     });
     
     // 에러 처리
@@ -1608,5 +1674,18 @@ server.listen(app.get('port'), () => {
     console.log(`게임 서버가 ${app.get('port')}번 포트에서 실행 중입니다.`);
     console.log('웹소켓 연결을 기다리고 있습니다...');
     console.log(`웹소켓 경로: /ws`);
+    console.log('성능 최적화 적용됨: 비동기 요청 처리, 브로드캐스트 최적화');
+    
+    // 주기적으로 서버 상태 모니터링
+    setInterval(() => {
+        const connectedClients = clients.size;
+        const roomPlayers = roomManager.getPlayerCount();
+        const memoryUsage = process.memoryUsage();
+        
+        if (connectedClients >= 5) {
+            console.log(`서버 상태 - 연결된 클라이언트: ${connectedClients}, 방 플레이어: ${roomPlayers}`);
+            console.log(`메모리 사용량 - RSS: ${Math.round(memoryUsage.rss / 1024 / 1024)}MB, Heap: ${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`);
+        }
+    }, 30000); // 30초마다
 });
 

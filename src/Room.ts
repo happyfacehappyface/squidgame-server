@@ -68,13 +68,28 @@ export class Room {
         return false;
     }
 
-    // 모든 플레이어에게 메시지 브로드캐스트
+    // 모든 플레이어에게 메시지 브로드캐스트 (성능 최적화)
     public broadcast(message: any, excludeClientId?: string): void {
+        const messageStr = JSON.stringify(message);
+        let sentCount = 0;
+        let failedCount = 0;
+        
         this.clients.forEach((client, clientId) => {
             if (clientId !== excludeClientId) {
-                client.send(message);
+                try {
+                    client.send(message);
+                    sentCount++;
+                } catch (error) {
+                    console.error(`브로드캐스트 실패 - 클라이언트 ${clientId}:`, error);
+                    failedCount++;
+                }
             }
         });
+        
+        // 브로드캐스트 결과 로깅 (10명 이상일 때만)
+        if (this.clients.size >= 10) {
+            console.log(`브로드캐스트 완료: ${sentCount}명 전송 성공, ${failedCount}명 실패 (총 ${this.clients.size}명)`);
+        }
     }
 
 

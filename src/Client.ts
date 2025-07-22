@@ -55,10 +55,16 @@ export class Client {
         this.playerName = null;
     }
 
-    // 메시지 전송
+    // 메시지 전송 (성능 최적화)
     public send(message: any): void {
         if (this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
+            try {
+                // 이미 문자열인 경우 그대로 전송, 객체인 경우 JSON.stringify
+                const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+                this.ws.send(messageStr);
+            } catch (error) {
+                console.error(`클라이언트 ${this.id} 메시지 전송 실패:`, error);
+            }
         }
     }
 

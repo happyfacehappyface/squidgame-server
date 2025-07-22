@@ -348,12 +348,18 @@ export class GameManager {
         }
         
         const player = this.players.get(playerId);
-        if (!player || player.status !== PlayerStatus.ALIVE) {
+        if (!player) {
             return false;
         }
         
-        this.readyPlayers.add(playerId);
-        console.log(`플레이어 ${playerId} 서브게임 준비 완료 (${this.readyPlayers.size}/${this.getAlivePlayers().length})`);
+        // 죽은 플레이어도 관전을 위해 SubGameReady를 받을 수 있도록 허용
+        // 단, 생존 플레이어만 readyPlayers에 추가
+        if (player.status === PlayerStatus.ALIVE) {
+            this.readyPlayers.add(playerId);
+            console.log(`플레이어 ${playerId} 서브게임 준비 완료 (${this.readyPlayers.size}/${this.getAlivePlayers().length})`);
+        } else {
+            console.log(`플레이어 ${playerId} (탈락자) 서브게임 준비 완료 - 관전 모드`);
+        }
         
         // 모든 생존 플레이어가 준비 완료되었는지 확인
         const alivePlayers = this.getAlivePlayers();
