@@ -755,8 +755,8 @@ function startTugOfWarGame(): void {
             return '';
         }).filter(id => id !== '');
         
-        // 팀 구성 설정 (왼쪽 팀 = 팀A, 오른쪽 팀 = 팀B)
-        (tugOfWarGame as TugOfWarGame).setTeams(leftTeamPlayerIds, [...rightTeamPlayerIds, ...unearnedWinPlayerIds]);
+        // 팀 구성 설정 (왼쪽 팀 = 팀A, 오른쪽 팀 = 팀B, 자동 승리자는 별도로 관리)
+        (tugOfWarGame as TugOfWarGame).setTeams(leftTeamPlayerIds, rightTeamPlayerIds, unearnedWinPlayerIds);
     }
     
     // 기존 타이머가 있다면 정리

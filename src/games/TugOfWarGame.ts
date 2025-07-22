@@ -16,6 +16,7 @@ export interface TugOfWarAction {
 export class TugOfWarGame extends BaseMiniGame {
     private teamA: string[] = [];
     private teamB: string[] = [];
+    private unearnedWinPlayers: string[] = []; // 자동 승리자들 (홀수 명일 때)
     private teamAPower: number = 0;
     private teamBPower: number = 0;
     private gameTime: number = 30000; // 30초 게임
@@ -42,18 +43,19 @@ export class TugOfWarGame extends BaseMiniGame {
             this.playerPowers.set(playerId, []);
         }
         
-        console.log(`줄다리기 시작: 팀A ${this.teamA.length}명 vs 팀B ${this.teamB.length}명, 게임시간 ${this.gameTime}ms`);
+        console.log(`줄다리기 시작: 팀A ${this.teamA.length}명 vs 팀B ${this.teamB.length}명, 자동승리 ${this.unearnedWinPlayers.length}명, 게임시간 ${this.gameTime}ms`);
     }
     
     protected onGameEnd(): void {
         console.log(`줄다리기 종료: 팀A 총력 ${this.teamAPower}, 팀B 총력 ${this.teamBPower}`);
     }
     
-    // 외부에서 팀 구성을 설정할 수 있는 메서드
-    public setTeams(teamA: string[], teamB: string[]): void {
+    // 외부에서 팀 구성을 설정할 수 있는 메서드 (자동 승리자 포함)
+    public setTeams(teamA: string[], teamB: string[], unearnedWinPlayers: string[] = []): void {
         this.teamA = [...teamA];
         this.teamB = [...teamB];
-        console.log(`팀 구성 설정 - 팀A: ${this.teamA.join(', ')}, 팀B: ${this.teamB.join(', ')}`);
+        this.unearnedWinPlayers = [...unearnedWinPlayers];
+        console.log(`팀 구성 설정 - 팀A: ${this.teamA.join(', ')}, 팀B: ${this.teamB.join(', ')}, 자동승리: ${this.unearnedWinPlayers.join(', ')}`);
     }
     
     private divideTeams(): void {
@@ -63,6 +65,7 @@ export class TugOfWarGame extends BaseMiniGame {
         
         this.teamA = shuffled.slice(0, midPoint);
         this.teamB = shuffled.slice(midPoint);
+        this.unearnedWinPlayers = []; // 자동 설정 시에는 자동 승리자 없음
         
         console.log(`팀 구성 - 팀A: ${this.teamA.join(', ')}, 팀B: ${this.teamB.join(', ')}`);
     }
@@ -92,12 +95,13 @@ export class TugOfWarGame extends BaseMiniGame {
         playerPowerHistory.push(pullPower);
         this.playerPowers.set(playerId, playerPowerHistory);
         
-        // 팀별 총 파워 업데이트
+        // 팀별 총 파워 업데이트 (자동 승리자는 파워 계산에 포함하지 않음)
         if (this.teamA.includes(playerId)) {
             this.teamAPower += pullPower;
         } else if (this.teamB.includes(playerId)) {
             this.teamBPower += pullPower;
         }
+        // 자동 승리자는 파워 계산에 포함하지 않음
         
         console.log(`플레이어 ${playerId} 파워: ${pullPower}, 팀A 총력: ${this.teamAPower}, 팀B 총력: ${this.teamBPower}`);
         return true;
@@ -106,6 +110,9 @@ export class TugOfWarGame extends BaseMiniGame {
     protected calculateResult(): MiniGameResult {
         const survivors: string[] = [];
         const eliminated: string[] = [];
+        
+        // 자동 승리자는 항상 생존
+        survivors.push(...this.unearnedWinPlayers);
         
         // 팀B(오른쪽)가 승리하거나 동점인 경우 팀B 승리
         // 팀A(왼쪽)가 명확히 더 강한 경우에만 팀A 승리
@@ -121,6 +128,8 @@ export class TugOfWarGame extends BaseMiniGame {
             eliminated.push(...this.teamA);
         }
         
+        console.log(`줄다리기 결과 - 자동승리: ${this.unearnedWinPlayers.join(', ')}, 팀A 승리: ${isLeftWin}, 생존: ${survivors.join(', ')}, 탈락: ${eliminated.join(', ')}`);
+        
         return {
             gameType: this.gameType,
             eliminatedPlayers: eliminated,
@@ -128,6 +137,7 @@ export class TugOfWarGame extends BaseMiniGame {
             gameData: {
                 teamA: this.teamA,
                 teamB: this.teamB,
+                unearnedWinPlayers: this.unearnedWinPlayers,
                 teamAPower: this.teamAPower,
                 teamBPower: this.teamBPower,
                 winningTeam: this.teamAPower > this.teamBPower ? 'TEAM_A' : 'TEAM_B',  // 동점 시 팀B 승리
@@ -142,6 +152,7 @@ export class TugOfWarGame extends BaseMiniGame {
             ...super.getGameState(),
             teamA: this.teamA,
             teamB: this.teamB,
+            unearnedWinPlayers: this.unearnedWinPlayers,
             teamAPower: this.teamAPower,
             teamBPower: this.teamBPower,
             gameTime: this.gameTime,
@@ -156,6 +167,8 @@ export class TugOfWarGame extends BaseMiniGame {
             return TugOfWarTeam.TEAM_A;
         } else if (this.teamB.includes(playerId)) {
             return TugOfWarTeam.TEAM_B;
+        } else if (this.unearnedWinPlayers.includes(playerId)) {
+            return null; // 자동 승리자는 팀이 없음
         }
         return null;
     }
