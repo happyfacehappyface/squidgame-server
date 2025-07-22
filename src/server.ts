@@ -565,11 +565,8 @@ function handleReadySubGame(client: Client): void {
         // 모든 플레이어가 준비 완료된 경우, onSubGameReady 이벤트에서 브로드캐스트 처리됨
         console.log(`클라이언트 ${client.id} 서브게임 준비 완료 - 모든 플레이어 준비 완료!`);
     } else {
-        // 아직 모든 플레이어가 준비되지 않은 경우, 개별 성공 응답
+        // 아직 모든 플레이어가 준비되지 않은 경우, 로그만 출력
         console.log(`클라이언트 ${client.id} 서브게임 준비 완료 - 다른 플레이어 대기 중`);
-        sendResponse(client, createSuccessResponse(ResponseSignal.READY_SUBGAME, {
-            message: '서브게임 준비 완료. 다른 플레이어를 기다리는 중입니다.'
-        }));
     }
 }
 
