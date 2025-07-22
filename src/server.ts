@@ -549,12 +549,23 @@ function startDalgonaGame(): void {
     // 달고나 게임의 제한시간 (60초 = 60000ms)
     const timeLimitMs = 60000;
     
+    // 생존한 플레이어들의 인덱스 가져오기
+    const gameInfo = gameManager.getGameInfo();
+    const alivePlayers = gameInfo.players;
+    const alivePlayerIds = Object.keys(alivePlayers).filter(playerId => 
+        alivePlayers[playerId].status === PlayerStatus.ALIVE
+    );
+    const playerIndices = alivePlayerIds.map(playerId => 
+        roomManager.getPlayerIndex(playerId)
+    ).filter(index => index !== -1);
+
     // 모든 플레이어에게 DALGONA_GAME_STARTED 응답 전송
     roomManager.broadcast({
         code: ResponseCode.SUCCESS,
         signal: ResponseSignal.DALGONA_GAME_STARTED,
         data: {
-            timeLimitMs: timeLimitMs
+            timeLimitMs: timeLimitMs,
+            playerIndices: playerIndices
         }
     });
     
@@ -563,7 +574,7 @@ function startDalgonaGame(): void {
         finishDalgonaGame();
     }, timeLimitMs);
     
-    console.log(`달고나 게임 시작 패킷 전송 완료 (제한시간: ${timeLimitMs}ms)`);
+    console.log(`달고나 게임 시작 패킷 전송 완료 (제한시간: ${timeLimitMs}ms, 참여자: ${playerIndices.join(', ')})`);
 }
 
 // 달고나 게임 종료 및 결과 처리
@@ -887,25 +898,38 @@ function resetGameRoom(): void {
 
 // 모든 플레이어가 달고나 게임 결과를 전송했는지 확인
 function checkDalgonaGameComplete(): void {
-    const totalPlayers = roomManager.getPlayerCount();
-    const submittedResults = dalgonaGameResults.size;
+    // 생존한 플레이어 목록 가져오기
+    const gameInfo = gameManager.getGameInfo();
+    const alivePlayerIds = Object.keys(gameInfo.players).filter(
+        playerId => gameInfo.players[playerId].status === PlayerStatus.ALIVE
+    );
+    const totalAlivePlayers = alivePlayerIds.length;
+
+    if (totalAlivePlayers === 0) {
+        console.log('달고나 게임 완료 체크: 생존자가 없어 즉시 게임을 종료합니다.');
+        finishDalgonaGame(); // 타임아웃 로직과 동일하게 게임 종료 처리
+        return;
+    }
+
+    // 생존한 플레이어 중 몇 명이 결과를 제출했는지 확인
+    const submittedAlivePlayerCount = alivePlayerIds.filter(playerId => 
+        dalgonaGameResults.has(playerId)
+    ).length;
     
-    console.log(`달고나 게임 결과 수집 상황: ${submittedResults}/${totalPlayers}`);
+    console.log(`달고나 게임 결과 수집 상황 (생존자 기준): ${submittedAlivePlayerCount}/${totalAlivePlayers}`);
     
-    if (submittedResults === totalPlayers && totalPlayers > 0) {
-        console.log('모든 플레이어가 달고나 게임 결과를 전송했습니다.');
+    // 모든 생존자가 결과를 제출했다면 게임 종료
+    if (submittedAlivePlayerCount === totalAlivePlayers) {
+        console.log('모든 생존한 플레이어가 달고나 게임 결과를 전송했습니다. 2초 후 라운드를 종료합니다.');
         
-        // 달고나 게임 타이머 정리 (모든 플레이어가 일찍 완료함)
+        // 달고나 게임 타이머 정리 (모든 생존자가 제한시간 전에 완료함)
         if (dalgonaGameTimer) {
             clearTimeout(dalgonaGameTimer);
             dalgonaGameTimer = null;
-            console.log('모든 플레이어 완료로 인한 달고나 게임 타이머 정리');
+            console.log('모든 생존자 완료로 인한 달고나 게임 타이머 정리');
         }
         
-        // 결과 추적 맵 초기화 (다음 게임을 위해)
-        dalgonaGameResults.clear();
-        
-        // GameManager에게 미니게임 종료 알림 (탈락 처리를 위해)
+        // GameManager에게 미니게임 종료 알림 (결과 집계 및 탈락 처리)
         setTimeout(() => {
             gameManager.endCurrentMiniGame();
         }, 2000); // 2초 후 게임 종료 (플레이어들이 결과를 확인할 시간 제공)
