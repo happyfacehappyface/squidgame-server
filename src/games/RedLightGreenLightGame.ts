@@ -33,7 +33,7 @@ export interface RequestGameEndCallback {
 }
 
 export class RedLightGreenLightGame extends BaseMiniGame {
-    private timeLimit: number = 60000; // 60초 제한
+    private timeLimit: number = 30000; // 30초 제한
     private startTime: number = 0;
     private redLightOn: boolean = false; // 초록불로 시작 (첫 변화가 빨간불이 되도록)
     private lightChangeTimer: NodeJS.Timeout | null = null;
