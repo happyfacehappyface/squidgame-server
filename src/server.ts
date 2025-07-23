@@ -1324,16 +1324,18 @@ function resetGameRoom(): void {
     // GameManager 리셋 (게임 상태 초기화)
     gameManager.resetGame();
     
-    // Room 초기화 (모든 클라이언트 제거)
-    const allClientIds = roomManager.getAllClientIds();
-    for (const clientId of allClientIds) {
-        roomManager.removeClient(clientId);
-    }
-    
-    // Room 상태를 WAITING으로 초기화
+    // Room 상태만 초기화 (클라이언트들은 global room에서만 나가도록)
     roomManager.globalRoom.endGame();
     
-    console.log('게임 방 초기화 완료 - 새로운 플레이어가 입장할 수 있습니다');
+    // 모든 클라이언트의 게임 관련 상태만 초기화 (소켓 연결은 유지)
+    const allClients = roomManager.getAllClients();
+    allClients.forEach(client => {
+        // 클라이언트가 global room에서 나가도록 처리 (소켓 연결은 유지)
+        client.leaveRoom();
+        // 소켓 연결은 그대로 유지되므로 클라이언트 객체는 살아있음
+    });
+    
+    console.log('게임 방 초기화 완료 - 클라이언트들이 global room에서 나갔지만 소켓 연결은 유지됨');
 }
 
 // 모든 플레이어가 달고나 게임 결과를 전송했는지 확인
