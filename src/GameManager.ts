@@ -147,31 +147,18 @@ export class GameManager {
         }, 120000); // 2분
     }
     
-    // 랜덤 미니게임 선택 (중복 방지)
+    // 고정 순서 미니게임 선택 (RedLightGreenLight -> TugOfWar -> Dalgona)
     private selectRandomMiniGame(): MiniGameType {
-
+        // 고정된 게임 순서 정의
+        const gameOrder: MiniGameType[] = [
+            MiniGameType.RED_LIGHT_GREEN_LIGHT,
+            MiniGameType.TUG_OF_WAR,
+            MiniGameType.DALGONA
+        ];
         
-
-
-        // 모든 사용 가능한 게임 타입들을 동적으로 가져오기
-        const allGameTypes = Object.values(MiniGameType) as MiniGameType[];
-
-        // FOR DEBUG PURPOSE
-        //return allGameTypes[2];
-        
-        // 아직 플레이하지 않은 게임들만 필터링
-        const availableGames = allGameTypes.filter(gameType => !this.playedGames.has(gameType));
-        
-        // 모든 게임을 플레이했다면 플레이한 게임 기록 초기화하고 다시 시작
-        if (availableGames.length === 0) {
-            console.log('모든 미니게임을 플레이했습니다. 플레이한 게임 기록을 초기화합니다.');
-            this.playedGames.clear();
-            return this.selectRandomMiniGame(); // 재귀 호출로 다시 선택
-        }
-        
-        // 사용 가능한 게임 중에서 랜덤 선택
-        const randomIndex = Math.floor(Math.random() * availableGames.length);
-        const selectedGame = availableGames[randomIndex];
+        // 현재 라운드에 해당하는 게임 선택 (라운드는 0부터 시작하므로 -1)
+        const gameIndex = (this.currentRound - 1) % gameOrder.length;
+        const selectedGame = gameOrder[gameIndex];
         
         // 선택된 게임을 플레이한 게임 목록에 추가
         this.playedGames.add(selectedGame);
@@ -184,7 +171,7 @@ export class GameManager {
         };
         
         const playedGameNames = Array.from(this.playedGames).map(g => gameNameMap[g]).join(', ');
-        console.log(`랜덤 미니게임 선택: ${gameNameMap[selectedGame]} 게임 (총 ${allGameTypes.length}개 중 플레이 완료: ${playedGameNames})`);
+        console.log(`고정 순서 미니게임 선택: ${gameNameMap[selectedGame]} 게임 (라운드 ${this.currentRound}, 플레이 완료: ${playedGameNames})`);
         
         return selectedGame;
     }

@@ -587,7 +587,7 @@ function startDalgonaGame(): void {
     }
     
     // 달고나 게임의 제한시간 (60초 = 60000ms)
-    const timeLimitMs = 60000;
+    const timeLimitMs = 45000;
     
     // 생존한 플레이어들의 인덱스 가져오기
     const gameInfo = gameManager.getGameInfo();
@@ -941,7 +941,7 @@ function startRedLightGreenLightGameFromClass(): void {
     }
     
     // 게임 시작 패킷 전송
-    const timeLimitMs = 30000;
+    const timeLimitMs = 45000;
     roomManager.broadcast({
         code: ResponseCode.SUCCESS,
         signal: ResponseSignal.REDLIGHTGREENLIGHT_GAME_STARTED,

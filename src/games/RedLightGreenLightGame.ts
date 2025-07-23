@@ -33,7 +33,7 @@ export interface RequestGameEndCallback {
 }
 
 export class RedLightGreenLightGame extends BaseMiniGame {
-    private timeLimit: number = 30000; // 30초 제한
+    private timeLimit: number = 40000; // 40초 제한
     private startTime: number = 0;
     private redLightOn: boolean = false; // 초록불로 시작 (첫 변화가 빨간불이 되도록)
     private lightChangeTimer: NodeJS.Timeout | null = null;
@@ -493,7 +493,7 @@ export class RedLightGreenLightGame extends BaseMiniGame {
                 console.log(`[DEBUG] onRequestGameEnd 콜백이 설정되지 않음 - 직접 end() 호출`);
                 this.end();
             }
-        }, 3000); // 3초 후 GameManager에게 게임 종료 요청
+        }, 4000); // 3초 후 GameManager에게 게임 종료 요청
     }
     
     // 게임 시작할 때 미니게임 페이즈에서 호출할 메서드
