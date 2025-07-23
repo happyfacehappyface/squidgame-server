@@ -1327,15 +1327,15 @@ function resetGameRoom(): void {
     // Room 상태만 초기화 (클라이언트들은 global room에서만 나가도록)
     roomManager.globalRoom.endGame();
     
-    // 모든 클라이언트의 게임 관련 상태만 초기화 (소켓 연결은 유지)
+    // 모든 클라이언트들을 방에서 나가게 하되, 소켓 연결은 유지
     const allClients = roomManager.getAllClients();
     allClients.forEach(client => {
-        // 클라이언트가 global room에서 나가도록 처리 (소켓 연결은 유지)
+        // 클라이언트가 방에서 나가도록 처리 (소켓 연결은 유지)
         client.leaveRoom();
         // 소켓 연결은 그대로 유지되므로 클라이언트 객체는 살아있음
     });
     
-    console.log('게임 방 초기화 완료 - 클라이언트들이 global room에서 나갔지만 소켓 연결은 유지됨');
+    console.log('게임 방 초기화 완료 - 클라이언트들이 방에서 나갔지만 소켓 연결은 유지됨');
 }
 
 // 모든 플레이어가 달고나 게임 결과를 전송했는지 확인
@@ -1630,8 +1630,9 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
             }
         }
         
-        // 클라이언트 정리
-        client.disconnect();
+        // 클라이언트 상태만 정리 (WebSocket은 이미 닫혔으므로 disconnect() 호출하지 않음)
+        client.isAlive = false;
+        client.leaveRoom();
         clients.delete(client.id);
         
         // 메모리 정리
@@ -1666,7 +1667,9 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
             }
         }
         
-        client.disconnect();
+        // 클라이언트 상태만 정리 (WebSocket 에러 시에도 disconnect() 호출하지 않음)
+        client.isAlive = false;
+        client.leaveRoom();
         clients.delete(client.id);
     });
 });
